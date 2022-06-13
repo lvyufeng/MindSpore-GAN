@@ -33,8 +33,8 @@ def value_and_grad(fn, params=None, has_aux=False):
         return values, grads
     return value_and_grad_f
 
-def grad(fn, has_aux=False):
-    value_and_grad_f = value_and_grad(fn, has_aux)
+def grad(fn, params=None, has_aux=False):
+    value_and_grad_f = value_and_grad(fn, params, has_aux)
     def grad_f(*args):
         _, g = value_and_grad_f(*args)
         return g
