@@ -7,10 +7,10 @@ import mindspore.nn as nn
 import mindspore.ops as ops
 import mindspore.dataset as ds
 import mindspore.dataset.vision.c_transforms as CV
-from mindspore import ms_function
+from mindspore import ms_function, context
 from tqdm import tqdm
 
-sys.path.append('..')
+sys.path.append(os.pardir)
 from grad import value_and_grad
 from layers import Dense
 from utils import to_image
@@ -33,12 +33,18 @@ opt = parser.parse_args()
 img_shape = (opt.channels, opt.img_size, opt.img_size)
 latent_dim = opt.latent_dim
 
+if context.get_context('device_target') == 'Ascend':
+    compute_type = mindspore.float16
+else:
+    compute_type = mindspore.float32
+
+
 class Generator(nn.Cell):
     def __init__(self):
         super(Generator, self).__init__()
 
         def block(in_feat, out_feat, normalize=True):
-            layers = [Dense(in_feat, out_feat)]
+            layers = [Dense(in_feat, out_feat).to_float(compute_type)]
             if normalize:
                 layers.append(nn.BatchNorm1d(out_feat, 0.8))
             layers.append(nn.LeakyReLU(0.2))
@@ -49,7 +55,7 @@ class Generator(nn.Cell):
             *block(128, 256),
             *block(256, 512),
             *block(512, 1024),
-            Dense(1024, int(np.prod(img_shape))),
+            Dense(1024, int(np.prod(img_shape))).to_float(compute_type),
             nn.Tanh()
         )
 
@@ -63,11 +69,11 @@ class Discriminator(nn.Cell):
         super(Discriminator, self).__init__()
 
         self.model = nn.SequentialCell(
-            Dense(int(np.prod(img_shape)), 512),
+            Dense(int(np.prod(img_shape)), 512).to_float(compute_type),
             nn.LeakyReLU(0.2),
-            Dense(512, 256),
+            Dense(512, 256).to_float(compute_type),
             nn.LeakyReLU(0.2),
-            Dense(256, 1),
+            Dense(256, 1).to_float(compute_type),
             nn.Sigmoid(),
         )
 
@@ -148,8 +154,8 @@ grad_discriminator_fn = value_and_grad(discriminator_forward,
 
 @ms_function
 def train_step(imgs):
-    valid = ops.ones((imgs.shape[0], 1), mindspore.float32)
-    fake = ops.zeros((imgs.shape[0], 1), mindspore.float32)
+    valid = ops.ones((imgs.shape[0], 1), compute_type)
+    fake = ops.zeros((imgs.shape[0], 1), compute_type)
 
     (g_loss, (gen_imgs,)), g_grads = grad_generator_fn(imgs, valid)
     optimizer_G(g_grads)
