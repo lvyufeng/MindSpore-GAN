@@ -13,7 +13,7 @@ from tqdm import tqdm
 sys.path.append(os.pardir)
 from grad import value_and_grad
 from layers import Dense
-from utils import to_image
+from img_utils import to_image
 
 os.makedirs("images", exist_ok=True)
 

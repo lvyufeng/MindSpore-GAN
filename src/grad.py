@@ -1,16 +1,17 @@
-from mindspore._c_expression import GradOperation_
+# from mindspore._c_expression import GradOperation_
 from mindspore.common.api import ms_function
-from mindspore.ops import stop_gradient
+from mindspore.ops import stop_gradient, GradOperation
 
-grad_func = GradOperation_('grad', True, False, False, False)
-grad_cell = GradOperation_('grad', False, True, False, False)
+# grad_func = GradOperation_('grad', True, False, False, False)
+# grad_cell = GradOperation_('grad', False, True, False, False)
+grad_func = GradOperation(True, False, False)
+grad_cell = GradOperation(False, True, False)
 def value_and_grad(fn, params=None, has_aux=False):
     if params is None:
         grad_ = grad_func
     else:
         grad_ = grad_cell
 
-    @ms_function
     def fn_aux(*args):
         outputs = fn(*args)
         no_grad_outputs = ()
@@ -23,7 +24,6 @@ def value_and_grad(fn, params=None, has_aux=False):
     else:
         fn_ = fn
 
-    @ms_function
     def value_and_grad_f(*args):
         values = fn_(*args)
         if params is None:
