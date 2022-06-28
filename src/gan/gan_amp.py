@@ -2,11 +2,12 @@ import os
 import sys
 import argparse
 import numpy as np
+import mindspore
 import mindspore.nn as nn
 import mindspore.ops as ops
 import mindspore.dataset as ds
 import mindspore.dataset.vision.c_transforms as CV
-from mindspore import context
+from mindspore import context, ms_function
 from tqdm import tqdm
 
 sys.path.append(os.pardir)
@@ -96,11 +97,9 @@ discriminator.update_parameters_name('discriminator')
 if amp:
     auto_mixed_precision(generator)
     auto_mixed_precision(discriminator)
-    loss_scale_D = DynamicLossScale(1024, 2, 100)
-    loss_scale_G = DynamicLossScale(1024, 2, 100)
+    loss_scaler = DynamicLossScale(1024, 2, 100)
 else:
-    loss_scale_D = NoLossScale()
-    loss_scale_G = NoLossScale()
+    loss_scaler = NoLossScale()
 
 generator.set_train()
 discriminator.set_train()
@@ -108,6 +107,8 @@ discriminator.set_train()
 # Optimizers
 optimizer_G = nn.Adam(generator.trainable_params(), learning_rate=opt.lr, beta1=opt.b1, beta2=opt.b2)
 optimizer_D = nn.Adam(discriminator.trainable_params(), learning_rate=opt.lr, beta1=opt.b1, beta2=opt.b2)
+optimizer_G.update_parameters_name('optim_g')
+optimizer_D.update_parameters_name('optim_d')
 
 # dataset
 
@@ -136,71 +137,55 @@ def create_dataset(data_path, mode, batch_size=32, shuffle=True, num_parallel_wo
 
     return mnist_ds
 
+def generator_forward(real_imgs, valid):
+    # Sample noise as generator input
+    z = ops.StandardNormal()((real_imgs.shape[0], latent_dim))
 
-class TrainStep(nn.Cell):
-    def __init__(self):
-        super().__init__()
-        self.optimizer_G = optimizer_G
-        self.optimizer_D = optimizer_D
-        self.loss_scale_G = loss_scale_G
-        self.loss_scale_D = loss_scale_D
+    # Generate a batch of images
+    gen_imgs = generator(z)
 
-        self.grad_generator_fn = value_and_grad(self.generator_forward,
-                                                self.optimizer_G.parameters,
-                                                has_aux=True)
-        self.grad_discriminator_fn = value_and_grad(self.discriminator_forward,
-                                                    self.optimizer_D.parameters)
+    # Loss measures generator's ability to fool the discriminator
+    g_loss = adversarial_loss(discriminator(gen_imgs), valid)
 
-    def generator_forward(self, real_imgs, valid):
-        # Sample noise as generator input
-        z = ops.StandardNormal()((real_imgs.shape[0], latent_dim))
+    if amp:
+        g_loss = loss_scaler.scale(g_loss)
+    return g_loss, gen_imgs
 
-        # Generate a batch of images
-        gen_imgs = generator(z)
+def discriminator_forward(real_imgs, gen_imgs, valid, fake):
+    # Measure discriminator's ability to classify real from generated samples
+    real_loss = adversarial_loss(discriminator(real_imgs), valid)
+    fake_loss = adversarial_loss(discriminator(gen_imgs), fake)
+    d_loss = (real_loss + fake_loss) / 2
+    if amp:
+        d_loss = loss_scaler.scale(d_loss)
+    return d_loss
 
-        # Loss measures generator's ability to fool the discriminator
-        g_loss = adversarial_loss(discriminator(gen_imgs), valid)
-        if amp:
-            g_loss = self.loss_scale_G.scale(g_loss)
-        return g_loss, gen_imgs
+grad_generator_fn = value_and_grad(generator_forward,
+                                   optimizer_G.parameters,
+                                   has_aux=True)
+grad_discriminator_fn = value_and_grad(discriminator_forward,
+                                       optimizer_D.parameters)
 
-    def discriminator_forward(self, real_imgs, gen_imgs, valid, fake):
-        # Measure discriminator's ability to classify real from generated samples
-        real_loss = adversarial_loss(discriminator(real_imgs), valid)
-        fake_loss = adversarial_loss(discriminator(gen_imgs), fake)
-        d_loss = (real_loss + fake_loss) / 2
-        if amp:
-            d_loss = self.loss_scale_D.scale(d_loss)
-        return d_loss
+@ms_function
+def train_step(imgs):
+    valid = ops.ones((imgs.shape[0], 1), mindspore.float32)
+    fake = ops.zeros((imgs.shape[0], 1), mindspore.float32)
 
-    def construct(self, imgs):
-        valid = ops.ones((imgs.shape[0], 1), imgs.dtype)
-        fake = ops.zeros((imgs.shape[0], 1), imgs.dtype)
+    (g_loss, (gen_imgs,)), g_grads = grad_generator_fn(imgs, valid)
+    d_loss, d_grads = grad_discriminator_fn(imgs, gen_imgs, valid, fake)
+    if amp:
+        g_loss = loss_scaler.unscale(g_loss)
+        d_loss = loss_scaler.unscale(d_loss)
+        if all_finite(g_grads) and all_finite(d_grads):
+            g_grads = loss_scaler.unscale(g_grads)
+            d_grads = loss_scaler.unscale(d_grads)
+            g_loss = ops.depend(g_loss, optimizer_G(g_grads))
+            d_loss = ops.depend(d_loss, optimizer_D(d_grads))
+    else:
+        optimizer_G(g_grads)
+        optimizer_D(d_grads)
 
-        (g_loss, (gen_imgs,)), g_grads = self.grad_generator_fn(imgs, valid)
-        d_loss, d_grads = self.grad_discriminator_fn(imgs, gen_imgs, valid, fake)
-        if amp:
-            # g_loss_scale
-            g_grads = self.loss_scale_G.unscale(g_grads)
-            g_loss = self.loss_scale_G.unscale(g_loss)
-            grads_finite_G = all_finite(g_grads)
-            self.loss_scale_G.adjust(grads_finite_G)
-            if grads_finite_G:
-                self.optimizer_G(g_grads)
-            # d_loss_scale
-            d_grads = self.loss_scale_G.unscale(d_grads)
-            d_loss = self.loss_scale_G.unscale(d_loss)
-            grads_finite_D = all_finite(d_grads)
-            self.loss_scale_D.adjust(grads_finite_D)
-            if grads_finite_D:
-                self.optimizer_D(d_grads)
-        else:
-            self.optimizer_G(g_grads)
-            self.optimizer_D(d_grads)
-
-        return g_loss, d_loss, gen_imgs
-
-train_step = TrainStep()
+    return g_loss, d_loss, gen_imgs
 
 dataset = create_dataset('../../dataset', 'train', opt.batch_size, num_parallel_workers=opt.n_cpu)
 dataset_size = dataset.get_dataset_size()

@@ -38,17 +38,12 @@ img_shape = (opt.channels, opt.img_size, opt.img_size)
 latent_dim = opt.latent_dim
 n_critic = opt.n_critic
 
-if context.get_context('device_target') == 'Ascend':
-    compute_type = mindspore.float16
-else:
-    compute_type = mindspore.float32
-
 class Generator(nn.Cell):
     def __init__(self):
         super(Generator, self).__init__()
 
         def block(in_feat, out_feat, normalize=True):
-            layers = [Dense(in_feat, out_feat).to_float(compute_type)]
+            layers = [Dense(in_feat, out_feat)]
             if normalize:
                 layers.append(nn.BatchNorm1d(out_feat, 0.8))
             layers.append(nn.LeakyReLU(0.2))
@@ -59,7 +54,7 @@ class Generator(nn.Cell):
             *block(128, 256),
             *block(256, 512),
             *block(512, 1024),
-            Dense(1024, int(np.prod(img_shape))).to_float(compute_type),
+            Dense(1024, int(np.prod(img_shape))),
             nn.Tanh()
         )
 
@@ -73,11 +68,11 @@ class Discriminator(nn.Cell):
         super(Discriminator, self).__init__()
 
         self.model = nn.SequentialCell(
-            Dense(int(np.prod(img_shape)), 512).to_float(compute_type),
+            Dense(int(np.prod(img_shape)), 512),
             nn.LeakyReLU(0.2),
-            Dense(512, 256).to_float(compute_type),
+            Dense(512, 256),
             nn.LeakyReLU(0.2),
-            Dense(256, 1).to_float(compute_type),
+            Dense(256, 1),
         )
 
     def construct(self, img):
