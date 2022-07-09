@@ -6,10 +6,11 @@ Collection of MindSpore implementations of Generative Adversarial Network variet
 
 ## Table of Contents
   * [Installation](#installation)
+  * [Datasets](#datasets)
   * [Implementations](#implementations)
-    <!-- + [Auxiliary Classifier GAN](#auxiliary-classifier-gan)
+    <!-- + [Auxiliary Classifier GAN](#auxiliary-classifier-gan) -->
     + [Adversarial Autoencoder](#adversarial-autoencoder)
-    + [BEGAN](#began)
+    <!-- + [BEGAN](#began)
     + [BicycleGAN](#bicyclegan)
     + [Boundary-Seeking GAN](#boundary-seeking-gan)
     + [Cluster GAN](#cluster-gan)
@@ -40,7 +41,40 @@ Collection of MindSpore implementations of Generative Adversarial Network variet
     + [Wasserstein GAN GP](#wasserstein-gan-gp)
     <!-- + [Wasserstein GAN DIV](#wasserstein-gan-div) -->
 
-## Implementations   
+## Installation
+
+```
+    $ git clone https://github.com/lvyufeng/MindSpore-GAN
+    $ cd MindSpore-GAN/
+    $ pip3 install -r requirements.txt
+```
+
+## Datasets
+
+Download all datasets for GAN before you try to run the examples.
+
+```bash
+$ bash scripts/download_mnist.sh
+```
+
+## Implementations
+
+### Adversarial Autoencoder
+_Adversarial Autoencoder_
+
+#### Authors
+Alireza Makhzani, Jonathon Shlens, Navdeep Jaitly, Ian Goodfellow, Brendan Frey
+
+#### Abstract
+n this paper, we propose the "adversarial autoencoder" (AAE), which is a probabilistic autoencoder that uses the recently proposed generative adversarial networks (GAN) to perform variational inference by matching the aggregated posterior of the hidden code vector of the autoencoder with an arbitrary prior distribution. Matching the aggregated posterior to the prior ensures that generating from any part of prior space results in meaningful samples. As a result, the decoder of the adversarial autoencoder learns a deep generative model that maps the imposed prior to the data distribution. We show how the adversarial autoencoder can be used in applications such as semi-supervised classification, disentangling style and content of images, unsupervised clustering, dimensionality reduction and data visualization. We performed experiments on MNIST, Street View House Numbers and Toronto Face datasets and show that adversarial autoencoders achieve competitive results in generative modeling and semi-supervised classification tasks.
+
+[[Paper]](https://arxiv.org/abs/1511.05644) [[Code]](src/aae/aae.py)
+
+#### Run Example
+```
+$ cd src/aae/
+$ python3 aae.py
+```
 
 ### GAN
 _Generative Adversarial Network_
@@ -55,7 +89,6 @@ We propose a new framework for estimating generative models via an adversarial p
 
 #### Run Example
 ```bash
-$ bash scripts/download_mnist.sh
 $ cd src/gan/
 $ python3 gan.py
 ```

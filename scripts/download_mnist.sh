@@ -1,6 +1,11 @@
-cd dataset
+if [ -d dataset ]
+then
+    echo "The folder ./dataset exists."
+else
+    mkdir dataset
+fi
 
-rm *
+cd dataset
 
 wget http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz
 wget http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz
