@@ -8,6 +8,44 @@ from mindspore.ops.operations.image_ops import ResizeBilinearV2, ResizeLinear1D
 from mindspore.ops._primitive_cache import _get_cache_prim
 from mindspore.ops import constexpr
 
+class _Dropout2d(nn.Cell):
+    def __init__(self, keep_prob):
+        super().__init__()
+        self.keep_prob = keep_prob
+        self.dropout2d = ops.Dropout2D(keep_prob)
+
+    def construct(self, x):
+        return self.dropout2d(x)
+
+    def bprop(self, x, out, dout):
+        _, mask = out
+        dy, _ = dout
+        if self.keep_prob != 0:
+            dy = dy * (1 / self.keep_prob)
+        dy = mask.astype(mindspore.float32) * dy
+        return (dy.astype(x.dtype),)
+
+
+class Dropout2d(nn.Cell):
+    def __init__(self, p=0.5):
+        super().__init__()
+        if p < 0 or p > 1:
+            raise ValueError(f"For '{self.cls_name}', the 'p' must be a number in range [0, 1], "
+                             f"but got {p}.")
+        self.keep_prob = 1 - p
+        self.dropout2d = _Dropout2d(self.keep_prob)
+
+    def construct(self, x):
+        if not self.training:
+            return x
+
+        if self.keep_prob == 1:
+            return x
+
+        out, _ = self.dropout2d(x)
+        return out
+
+
 class Conv2d(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, pad_mode='same', padding=0, dilation=1, group=1, has_bias=True):
         super().__init__(in_channels, out_channels, kernel_size, stride, pad_mode, padding, dilation, group, has_bias, weight_init='normal', bias_init='zeros')
@@ -21,11 +59,13 @@ class Conv2d(nn.Conv2d):
             bound = 1 / math.sqrt(fan_in)
             self.bias.set_data(initializer(Uniform(bound), [self.out_channels]))
 
+
 class Embedding(nn.Embedding):
     def __init__(self, vocab_size, embedding_size, use_one_hot=False, embedding_table='normal', dtype=mindspore.float32, padding_idx=None):
         if embedding_table == 'normal':
             embedding_table = Normal(1.0)
         super().__init__(vocab_size, embedding_size, use_one_hot, embedding_table, dtype, padding_idx)
+
 
 class Dense(nn.Dense):
     def __init__(self, in_channels, out_channels, has_bias=True, activation=None):
@@ -39,11 +79,13 @@ class Dense(nn.Dense):
             bound = 1 / math.sqrt(fan_in)
             self.bias.set_data(initializer(Uniform(bound), [self.out_channels]))
 
+
 @constexpr
 def _check_scale_factor(shape, scale_factor):
     if isinstance(scale_factor, tuple) and len(scale_factor) != len(shape[2:]):
         raise ValueError(f"the number of 'scale_fator' must match to inputs.shape[2:], "
                          f"but get scale_factor={scale_factor}, inputs.shape[2:]={shape[2:]}")
+
 
 def _interpolate_output_shape(shape, scales, sizes, mode):
     """calculate output shape"""
@@ -62,6 +104,7 @@ def _interpolate_output_shape(shape, scales, sizes, mode):
     if mode == "nearest":
         return ret
     return Tensor(ret)
+
 
 class Upsample(nn.Cell):
     def __init__(self, size = None, scale_factor = None,

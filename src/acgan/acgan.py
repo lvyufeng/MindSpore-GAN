@@ -15,7 +15,7 @@ from mindspore.common.initializer import initializer, Normal
 
 sys.path.append(os.pardir)
 from grad import value_and_grad
-from layers import Dense, Upsample, Embedding, Conv2d
+from layers import Dense, Upsample, Embedding, Conv2d, Dropout2d
 from img_utils import to_image
 
 os.makedirs("images", exist_ok=True)
@@ -86,7 +86,7 @@ class Discriminator(nn.Cell):
             block = [
                 Conv2d(in_filters, out_filters, 3, 2, 'pad', 1),
                 nn.LeakyReLU(0.2),
-                nn.Dropout2d(0.25)
+                Dropout2d(0.25)
             ]
             if bn:
                 block.append(nn.BatchNorm2d(out_filters, 0.8))
