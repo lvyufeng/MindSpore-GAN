@@ -10,10 +10,10 @@ Collection of MindSpore implementations of Generative Adversarial Network variet
   * [Implementations](#implementations)
     + [Auxiliary Classifier GAN](#auxiliary-classifier-gan)
     + [Adversarial Autoencoder](#adversarial-autoencoder)
-    <!-- + [BEGAN](#began)
-    + [BicycleGAN](#bicyclegan)
+    + [BEGAN](#began)
+    <!-- + [BicycleGAN](#bicyclegan) -->
     + [Boundary-Seeking GAN](#boundary-seeking-gan)
-    + [Cluster GAN](#cluster-gan)
+    <!-- + [Cluster GAN](#cluster-gan)
     + [Conditional GAN](#conditional-gan)
     + [Context-Conditional GAN](#context-conditional-gan)
     + [Context Encoder](#context-encoder)
@@ -96,6 +96,40 @@ n this paper, we propose the "adversarial autoencoder" (AAE), which is a probabi
 ```
 $ cd src/aae/
 $ python3 aae.py
+```
+
+### BEGAN
+_BEGAN: Boundary Equilibrium Generative Adversarial Networks_
+
+#### Authors
+David Berthelot, Thomas Schumm, Luke Metz
+
+#### Abstract
+We propose a new equilibrium enforcing method paired with a loss derived from the Wasserstein distance for training auto-encoder based Generative Adversarial Networks. This method balances the generator and discriminator during training. Additionally, it provides a new approximate convergence measure, fast and stable training and high visual quality. We also derive a way of controlling the trade-off between image diversity and visual quality. We focus on the image generation task, setting a new milestone in visual quality, even at higher resolutions. This is achieved while using a relatively simple model architecture and a standard training procedure.
+
+[[Paper]](https://arxiv.org/abs/1703.10717) [[Code]](src/began/began.py)
+
+#### Run Example
+```
+$ cd src/began/
+$ python3 began.py
+```
+
+### Boundary-Seeking GAN
+_Boundary-Seeking Generative Adversarial Networks_
+
+#### Authors
+R Devon Hjelm, Athul Paul Jacob, Tong Che, Adam Trischler, Kyunghyun Cho, Yoshua Bengio
+
+#### Abstract
+Generative adversarial networks (GANs) are a learning framework that rely on training a discriminator to estimate a measure of difference between a target and generated distributions. GANs, as normally formulated, rely on the generated samples being completely differentiable w.r.t. the generative parameters, and thus do not work for discrete data. We introduce a method for training GANs with discrete data that uses the estimated difference measure from the discriminator to compute importance weights for generated samples, thus providing a policy gradient for training the generator. The importance weights have a strong connection to the decision boundary of the discriminator, and we call our method boundary-seeking GANs (BGANs). We demonstrate the effectiveness of the proposed algorithm with discrete image and character-based natural language generation. In addition, the boundary-seeking objective extends to continuous data, which can be used to improve stability of training, and we demonstrate this on Celeba, Large-scale Scene Understanding (LSUN) bedrooms, and Imagenet without conditioning.
+
+[[Paper]](https://arxiv.org/abs/1702.08431) [[Code]](src/bgan/bgan.py)
+
+#### Run Example
+```
+$ cd src/bgan/
+$ python3 bgan.py
 ```
 
 ### GAN

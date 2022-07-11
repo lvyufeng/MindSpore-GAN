@@ -27,77 +27,61 @@ parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rat
 parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
 parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
-parser.add_argument("--latent_dim", type=int, default=62, help="dimensionality of the latent space")
-parser.add_argument("--img_size", type=int, default=32, help="size of each image dimension")
+parser.add_argument("--latent_dim", type=int, default=100, help="dimensionality of the latent space")
+parser.add_argument("--img_size", type=int, default=28, help="size of each image dimension")
 parser.add_argument("--channels", type=int, default=1, help="number of image channels")
-parser.add_argument("--sample_interval", type=int, default=400, help="number of image channels")
+parser.add_argument("--sample_interval", type=int, default=400, help="interval betwen image samples")
 opt = parser.parse_args()
 
 img_shape = (opt.channels, opt.img_size, opt.img_size)
 latent_dim = opt.latent_dim
-
-def weights_init_normal(top_cell: nn.Cell):
-    for _, cell in top_cell.cells_and_names():
-        classname = cell.__class__.__name__
-        if classname.find("Conv") != -1:
-            cell.weight.set_data(initializer(Normal(0.02), cell.weight.shape))
-        elif classname.find("BatchNorm2d") != -1:
-            cell.gamma.set_data(initializer(Normal(0.02, 1.0), cell.gamma.shape))
-            cell.beta.set_data(initializer('zeros', cell.beta.shape))
 
 
 class Generator(nn.Cell):
     def __init__(self):
         super(Generator, self).__init__()
 
-        self.init_size = opt.img_size // 4
-        self.l1 = nn.SequentialCell([Dense(opt.latent_dim, 128 * self.init_size ** 2)])
+        def block(in_feat, out_feat, normalize=True):
+            layers = [Dense(in_feat, out_feat)]
+            if normalize:
+                layers.append(nn.BatchNorm1d(out_feat, 0.8))
+            layers.append(nn.LeakyReLU(0.2))
+            return layers
 
-        self.conv_blocks = nn.SequentialCell(
-            nn.BatchNorm2d(128),
-            Upsample(scale_factor=2),
-            Conv2d(128, 128, 3, stride=1, padding=1, pad_mode='pad'),
-            nn.BatchNorm2d(128, 0.8),
-            nn.LeakyReLU(0.2),
-            Upsample(scale_factor=2),
-            Conv2d(128, 64, 3, stride=1, padding=1, pad_mode='pad'),
-            nn.BatchNorm2d(64, 0.8),
-            nn.LeakyReLU(0.2),
-            Conv2d(64, opt.channels, 3, stride=1, padding=1, pad_mode='pad'),
-            nn.Tanh(),
+        self.model = nn.SequentialCell(
+            *block(opt.latent_dim, 128, normalize=False),
+            *block(128, 256),
+            *block(256, 512),
+            *block(512, 1024),
+            Dense(1024, int(np.prod(img_shape))),
+            nn.Tanh()
         )
 
-    def construct(self, noise):
-        out = self.l1(noise)
-        out = out.view(out.shape[0], 128, self.init_size, self.init_size)
-        img = self.conv_blocks(out)
+    def construct(self, z):
+        img = self.model(z)
+        img = img.view(img.shape[0], *img_shape)
         return img
 
 class Discriminator(nn.Cell):
     def __init__(self):
         super(Discriminator, self).__init__()
 
-        # Upsampling
-        self.down = nn.SequentialCell(nn.Conv2d(opt.channels, 64, 3, 2, 'pad', 1), nn.ReLU())
-        # Fully-connected layers
-        self.down_size = opt.img_size // 2
-        down_dim = 64 * (opt.img_size // 2) ** 2
-        self.fc = nn.SequentialCell(
-            Dense(down_dim, 32),
-            nn.BatchNorm1d(32, 0.8),
-            nn.ReLU(),
-            Dense(32, down_dim),
-            nn.BatchNorm1d(down_dim),
-            nn.ReLU(),
+        self.model = nn.SequentialCell(
+            Dense(int(np.prod(img_shape)), 512),
+            nn.LeakyReLU(0.2),
+            Dense(512, 256),
+            nn.LeakyReLU(0.2),
+            Dense(256, 1),
+            nn.Sigmoid(),
         )
-        # Upsampling
-        self.up = nn.SequentialCell(Upsample(scale_factor=2), Conv2d(64, opt.channels, 3, 1, 'pad', 1))
 
     def construct(self, img):
-        out = self.down(img)
-        out = self.fc(out.view(out.shape[0], -1))
-        out = self.up(out.view(out.shape[0], 64, self.down_size, self.down_size))
-        return out
+        img_flat = img.view(img.shape[0], -1)
+        validity = self.model(img_flat)
+        return validity
+
+
+discriminator_loss = nn.BCELoss(reduction='mean')
 
 # Initialize generator and discriminator
 generator = Generator()
@@ -112,10 +96,6 @@ optimizer_G = nn.Adam(generator.trainable_params(), learning_rate=opt.lr, beta1=
 optimizer_D = nn.Adam(discriminator.trainable_params(), learning_rate=opt.lr, beta1=opt.b1, beta2=opt.b2)
 optimizer_G.update_parameters_name('optim_g')
 optimizer_D.update_parameters_name('optim_d')
-
-# Initialize weights
-weights_init_normal(generator)
-weights_init_normal(discriminator)
 
 # dataset
 def create_dataset(data_path, mode, batch_size=32, shuffle=True, num_parallel_workers=1, drop_remainder=False):
@@ -147,8 +127,14 @@ def create_dataset(data_path, mode, batch_size=32, shuffle=True, num_parallel_wo
 
     return mnist_ds
 
+"""
+Boundary seeking loss.
+Reference: https://wiseodd.github.io/techblog/2017/03/07/boundary-seeking-gan/
+"""
+def boundary_seeking_loss(y_pred, y_true):
+    return 0.5 * ops.reduce_mean((ops.log(y_pred) - ops.log(1 - y_pred)) ** 2)
 
-def generator_forward(imgs):
+def generator_forward(imgs, valid):
     # Sample noise as generator input
     batch_size = imgs.shape[0]
     z = mnp.randn((batch_size, latent_dim))
@@ -157,47 +143,34 @@ def generator_forward(imgs):
     gen_imgs = generator(z)
 
     # Loss measures generator's ability to fool the discriminator
-    g_loss = ops.reduce_mean(ops.abs(discriminator(gen_imgs) - gen_imgs))
+    g_loss = boundary_seeking_loss(discriminator(gen_imgs), valid)
 
     return g_loss, gen_imgs
 
-def discriminator_forward(real_imgs, gen_imgs, k):
+def discriminator_forward(real_imgs, gen_imgs, valid, fake):
     # Measure discriminator's ability to classify real from generated samples
-    d_real = discriminator(real_imgs)
-    d_fake = discriminator(gen_imgs)
-
-    d_loss_real = ops.reduce_mean(ops.abs(d_real - real_imgs))
-    d_loss_fake = ops.reduce_mean(ops.abs(d_fake - gen_imgs))
-    d_loss = d_loss_real - k * d_loss_fake
-
-    return d_loss, d_loss_real, d_loss_fake
-
-def compute_weight_term(d_loss_real, d_loss_fake, k):
-    diff = ops.reduce_mean(gamma * d_loss_real - d_loss_fake)
-
-    # Update weight term for fake samples
-    k = k + lambda_k * diff.asnumpy()
-    k = min(max(k, 0), 1)  # Constraint to interval [0, 1]
-
-    # Update convergence metric
-    M = (d_loss_real + ops.abs(diff)).asnumpy()
-    return float(k), M
+    real_loss = discriminator_loss(discriminator(real_imgs), valid)
+    fake_loss = discriminator_loss(discriminator(gen_imgs), fake)
+    d_loss = (real_loss + fake_loss) / 2
+    return d_loss
 
 grad_generator_fn = value_and_grad(generator_forward,
                                    optimizer_G.parameters,
                                    has_aux=True)
 grad_discriminator_fn = value_and_grad(discriminator_forward,
-                                       optimizer_D.parameters,
-                                       has_aux=True)
+                                       optimizer_D.parameters)
 
 @ms_function
-def train_step(imgs, k):
-    (g_loss, (gen_imgs,)), g_grads = grad_generator_fn(imgs)
+def train_step(imgs):
+    valid = ops.ones((imgs.shape[0], 1), mindspore.float32)
+    fake = ops.zeros((imgs.shape[0], 1), mindspore.float32)
+
+    (g_loss, (gen_imgs,)), g_grads = grad_generator_fn(imgs, valid)
     optimizer_G(g_grads)
-    (d_loss, (d_loss_real, d_loss_fake)), d_grads = grad_discriminator_fn(imgs, gen_imgs, k)
+    d_loss, d_grads = grad_discriminator_fn(imgs, gen_imgs, valid, fake)
     optimizer_D(d_grads)
 
-    return g_loss, d_loss, gen_imgs, d_loss_real, d_loss_fake
+    return g_loss, d_loss, gen_imgs
 
 dataset = create_dataset('../../dataset', 'train', opt.batch_size, num_parallel_workers=opt.n_cpu)
 dataset_size = dataset.get_dataset_size()
@@ -211,9 +184,8 @@ for epoch in range(opt.n_epochs):
     t = tqdm(total=dataset_size)
     t.set_description('Epoch %i' % epoch)
     for i, (imgs, _) in enumerate(dataset.create_tuple_iterator()):
-        g_loss, d_loss, gen_imgs, d_loss_real, d_loss_fake = train_step(imgs, k)
-        k, M = compute_weight_term(d_loss_real, d_loss_fake, k)
-        t.set_postfix(g_loss=g_loss, d_loss=d_loss, k=k, M=M)
+        g_loss, d_loss, gen_imgs = train_step(imgs)
+        t.set_postfix(g_loss=g_loss, d_loss=d_loss)
         t.update(1)
         batches_done = epoch * dataset_size + i
         if batches_done % opt.sample_interval == 0:
