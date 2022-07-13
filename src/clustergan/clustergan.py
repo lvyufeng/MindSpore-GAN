@@ -6,17 +6,14 @@ import mindspore
 import mindspore.nn as nn
 import mindspore.ops as ops
 import mindspore.numpy as mnp
-import mindspore.dataset as ds
-import mindspore.dataset.vision.c_transforms as CV
-import mindspore.dataset.transforms as T
 from mindspore import ms_function
 from mindspore.common.initializer import initializer, Normal
 from tqdm import tqdm
 
 sys.path.append(os.pardir)
 from grad import value_and_grad, grad
-from layers import Dense, Embedding
 from img_utils import to_image
+from dataset import create_dataset
 
 os.makedirs("images", exist_ok=True)
 
@@ -86,7 +83,6 @@ def initialize_weights(top_cell: nn.Cell):
         if isinstance(cell, nn.Conv2d) or \
             isinstance(cell, nn.Conv2dTranspose) or \
             isinstance(cell, nn.Dense):
-            print(_)
             cell.weight.set_data(initializer(Normal(0.02), cell.weight.shape))
             cell.bias.set_data(initializer('zeros', cell.bias.shape))
 
@@ -311,37 +307,6 @@ optimizer_D = nn.Adam(discriminator.trainable_params(), learning_rate=lr, beta1=
 optimizer_GE.update_parameters_name('optim_ge.')
 optimizer_D.update_parameters_name('optim_d.')
 
-
-# dataset
-def create_dataset(data_path, mode, batch_size=32, shuffle=True, num_parallel_workers=1, drop_remainder=False):
-    """
-    create dataset for train or test
-    """
-    # define dataset
-    mnist_ds = ds.MnistDataset(data_path, mode)
-
-    # define map operations
-    img_transforms = [
-        CV.Rescale(1.0 / 255.0, 0),
-        CV.Resize(args.img_size, CV.Inter.BILINEAR),
-        CV.Normalize([0.5], [0.5]),
-        CV.HWC2CHW()
-    ]
-    label_transforms = [
-        T.TypeCast(mindspore.int32)
-    ]
-    
-    # apply map operations on images
-    mnist_ds = mnist_ds.map(operations=img_transforms, input_columns="image", num_parallel_workers=num_parallel_workers)
-    mnist_ds = mnist_ds.map(operations=label_transforms, input_columns="label", num_parallel_workers=num_parallel_workers)
-
-    # apply DatasetOps
-    if shuffle:
-        mnist_ds = mnist_ds.shuffle(buffer_size=1024)
-    mnist_ds = mnist_ds.batch(batch_size, drop_remainder=drop_remainder)
-
-    return mnist_ds
-
 def generator_forward(zn, zc, zc_idx):
     # Generate a batch of images
     gen_imgs = generator(zn, zc)
@@ -413,8 +378,8 @@ def train_step_g(zn, zc, zc_idx):
     return g_loss
 
 
-train_dataset = create_dataset('../../dataset', 'train', args.batch_size)
-test_dataset = create_dataset('../../dataset', 'test', args.batch_size)
+train_dataset = create_dataset('../../dataset', 'train', args.img_size, args.batch_size)
+test_dataset = create_dataset('../../dataset', 'test', args.img_size, args.batch_size)
 dataset_size = train_dataset.get_dataset_size()
 
 test_imgs, test_labels = next(test_dataset.create_tuple_iterator())

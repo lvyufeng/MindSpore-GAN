@@ -1,14 +1,10 @@
 import os
 import sys
 import argparse
-import numpy as np
 import mindspore
 import mindspore.nn as nn
 import mindspore.ops as ops
 import mindspore.numpy as mnp
-import mindspore.dataset as ds
-import mindspore.dataset.vision.c_transforms as CV
-import mindspore.dataset.transforms as T
 from tqdm import tqdm
 from mindspore import ms_function
 from mindspore.common.initializer import initializer, Normal
@@ -17,6 +13,7 @@ sys.path.append(os.pardir)
 from grad import value_and_grad
 from layers import Dense, Upsample, Embedding, Conv2d, Dropout2d
 from img_utils import to_image
+from dataset import create_dataset
 
 os.makedirs("images", exist_ok=True)
 
@@ -117,37 +114,6 @@ optimizer_D.update_parameters_name('optim_d')
 weights_init_normal(generator)
 weights_init_normal(discriminator)
 
-# dataset
-def create_dataset(data_path, mode, batch_size=32, shuffle=True, num_parallel_workers=1, drop_remainder=False):
-    """
-    create dataset for train or test
-    """
-    # define dataset
-    mnist_ds = ds.MnistDataset(data_path, mode)
-
-    # define map operations
-    img_transforms = [
-        CV.Rescale(1.0 / 255.0, 0),
-        CV.Resize(opt.img_size, CV.Inter.BILINEAR),
-        CV.Normalize([0.5], [0.5]),
-        CV.HWC2CHW()
-    ]
-    label_transforms = [
-        T.TypeCast(mindspore.int32)
-    ]
-    
-    # apply map operations on images
-    mnist_ds = mnist_ds.map(operations=img_transforms, input_columns="image", num_parallel_workers=num_parallel_workers)
-    mnist_ds = mnist_ds.map(operations=label_transforms, input_columns="label", num_parallel_workers=num_parallel_workers)
-
-    # apply DatasetOps
-    if shuffle:
-        mnist_ds = mnist_ds.shuffle(buffer_size=1024)
-    mnist_ds = mnist_ds.batch(batch_size, drop_remainder=drop_remainder)
-
-    return mnist_ds
-
-
 def generator_forward(imgs):
     # Sample noise as generator input
     batch_size = imgs.shape[0]
@@ -199,7 +165,7 @@ def train_step(imgs, k):
 
     return g_loss, d_loss, gen_imgs, d_loss_real, d_loss_fake
 
-dataset = create_dataset('../../dataset', 'train', opt.batch_size, num_parallel_workers=opt.n_cpu)
+dataset = create_dataset('../../dataset', 'train', opt.img_size, opt.batch_size, num_parallel_workers=opt.n_cpu)
 dataset_size = dataset.get_dataset_size()
 
 # BEGAN hyper parameters

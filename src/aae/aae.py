@@ -6,15 +6,14 @@ import mindspore
 import mindspore.nn as nn
 import mindspore.ops as ops
 import mindspore.numpy as mnp
-import mindspore.dataset as ds
-import mindspore.dataset.vision.c_transforms as CV
-from mindspore import ms_function, context
+from mindspore import ms_function
 from tqdm import tqdm
 
 sys.path.append(os.pardir)
 from grad import value_and_grad
 from layers import Dense
 from img_utils import to_image
+from dataset import create_dataset
 
 os.makedirs("images", exist_ok=True)
 
@@ -126,33 +125,6 @@ optimizer_D = nn.Adam(discriminator.trainable_params(), learning_rate=opt.lr, be
 optimizer_G.update_parameters_name('optim_g')
 optimizer_D.update_parameters_name('optim_d')
 
-# dataset
-
-def create_dataset(data_path, mode, batch_size=32, shuffle=True, num_parallel_workers=1, drop_remainder=False):
-    """
-    create dataset for train or test
-    """
-    # define dataset
-    mnist_ds = ds.MnistDataset(data_path, mode)
-
-    # define map operations
-    transforms = [
-        CV.Rescale(1.0 / 255.0, 0),
-        CV.Resize(opt.img_size, CV.Inter.BILINEAR),
-        CV.Normalize([0.5], [0.5]),
-        CV.HWC2CHW()
-    ]
-    
-    # apply map operations on images
-    mnist_ds = mnist_ds.map(operations=transforms, input_columns="image", num_parallel_workers=num_parallel_workers)
-
-    # apply DatasetOps
-    if shuffle:
-        mnist_ds = mnist_ds.shuffle(buffer_size=1024)
-    mnist_ds = mnist_ds.batch(batch_size, drop_remainder=drop_remainder)
-
-    return mnist_ds
-
 def generator_forward(real_imgs, valid):
     encoded_imgs = encoder(real_imgs)
     decoded_imgs = decoder(encoded_imgs)
@@ -192,7 +164,7 @@ def train_step(imgs):
 
     return g_loss, d_loss
 
-dataset = create_dataset('../../dataset', 'train', opt.batch_size, num_parallel_workers=opt.n_cpu)
+dataset = create_dataset('../../dataset', 'train', opt.img_size, opt.batch_size, num_parallel_workers=opt.n_cpu)
 dataset_size = dataset.get_dataset_size()
 
 def sample_image(n_row, batches_done):
