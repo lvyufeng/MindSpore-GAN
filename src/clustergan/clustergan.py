@@ -81,6 +81,14 @@ def calc_gradient_penalty(real_data, generated_data):
     # Return gradient penalty
     return LAMBDA * ((gradients_norm - 1) ** 2).mean()
 
+def initialize_weights(top_cell: nn.Cell):
+    for _, cell in top_cell.cells_and_names():
+        if isinstance(cell, nn.Conv2d) or \
+            isinstance(cell, nn.Conv2dTranspose) or \
+            isinstance(cell, nn.Dense):
+            print(_)
+            cell.weight.set_data(initializer(Normal(0.02), cell.weight.shape))
+            cell.bias.set_data(initializer('zeros', cell.bias.shape))
 
 # Softmax function
 def softmax(x):
@@ -144,6 +152,7 @@ class Generator_CNN(nn.Cell):
             nn.Sigmoid()
         )
 
+        initialize_weights(self)
         if self.verbose:
             print("Setting up {}...\n".format(self.name))
             print(self.model)
@@ -190,6 +199,7 @@ class Encoder_CNN(nn.Cell):
             nn.Dense(1024, latent_dim + n_c)
         )
 
+        initialize_weights(self)
         if self.verbose:
             print("Setting up {}...\n".format(self.name))
             print(self.model)
@@ -246,6 +256,7 @@ class Discriminator_CNN(nn.Cell):
         if (not self.wass):
             self.model = nn.SequentialCell(self.model, nn.Sigmoid())
 
+        initialize_weights(self)
         if self.verbose:
             print("Setting up {}...\n".format(self.name))
             print(self.model)
@@ -356,11 +367,7 @@ def generator_forward(zn, zc, zc_idx):
 
     return ge_loss
 
-def discriminator_forward(real_imgs):
-    # Sample random latent variables
-    zn, zc, zc_idx = sample_z(shape=real_imgs.shape[0],
-                                latent_dim=latent_dim,
-                                n_c=n_c)
+def discriminator_forward(real_imgs, zn, zc):
     # Generate a batch of images
     gen_imgs = generator(zn, zc)
     
@@ -379,24 +386,24 @@ def discriminator_forward(real_imgs):
     else:
         # Vanilla GAN loss
         valid = ops.ones((gen_imgs.shape[0], 1), mindspore.float32)
-        fake = ops.ones((gen_imgs.shape[0], 1), mindspore.float32)
+        fake = ops.zeros((gen_imgs.shape[0], 1), mindspore.float32)
         real_loss = bce_loss(D_real, valid)
         fake_loss = bce_loss(D_gen, fake)
         d_loss = (real_loss + fake_loss) / 2
 
-    return d_loss, zn, zc, zc_idx
+    return d_loss
 
 
 grad_generator_fn = value_and_grad(generator_forward,
                                    optimizer_GE.parameters)
 grad_discriminator_fn = value_and_grad(discriminator_forward,
-                                       optimizer_D.parameters, True)
+                                       optimizer_D.parameters)
 
 @ms_function
-def train_step_d(imgs):
-    (d_loss, (zn, zc, zc_idx,)), d_grads = grad_discriminator_fn(imgs)
+def train_step_d(real_imgs, zn, zc):
+    d_loss, d_grads = grad_discriminator_fn(real_imgs, zn, zc)
     optimizer_D(d_grads)
-    return d_loss, zn, zc, zc_idx
+    return d_loss
 
 @ms_function
 def train_step_g(zn, zc, zc_idx):
@@ -420,13 +427,14 @@ for epoch in range(args.n_epochs):
     t = tqdm(total=dataset_size)
     t.set_description('Epoch %i' % epoch)
     for i, (imgs, labels) in enumerate(train_dataset.create_tuple_iterator()):
-        d_loss, zn, zc, zc_idx = train_step_d(imgs)
+        # Sample random latent variables
+        zn, zc, zc_idx = sample_z(shape=imgs.shape[0],
+                                  latent_dim=latent_dim,
+                                  n_c=n_c)
         # Train the generator every n_critic steps
         if i % n_skip_iter == 0:
             g_loss = train_step_g(zn, zc, zc_idx)
-            # if batches_done % opt.sample_interval == 0:
-            #     to_image(fake_imgs[:25], "images/%d.png" % batches_done, nrow=5, normalize=True)
-            # batches_done += opt.n_critic
+        d_loss = train_step_d(imgs, zn, zc)
         t.set_postfix(g_loss=g_loss, d_loss=d_loss)
         t.update(1)
 

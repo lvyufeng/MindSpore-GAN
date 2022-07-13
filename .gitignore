@@ -131,3 +131,5 @@ dmypy.json
 dataset
 *.png
 rank_0/
+cmp.py
+*_pytorch.py
