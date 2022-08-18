@@ -1,7 +1,6 @@
 import os
 import sys
 import argparse
-import mindspore
 import mindspore.nn as nn
 import mindspore.ops as ops
 import mindspore.numpy as mnp
@@ -10,8 +9,7 @@ from mindspore import ms_function
 from mindspore.common.initializer import initializer, Normal
 
 sys.path.append(os.pardir)
-from grad import value_and_grad
-from layers import Dense, Upsample, Embedding, Conv2d, Dropout2d
+from layers import Dense, Upsample, Conv2d
 from img_utils import to_image
 from dataset import create_dataset
 
@@ -149,18 +147,18 @@ def compute_weight_term(d_loss_real, d_loss_fake, k):
     M = (d_loss_real + ops.abs(diff)).asnumpy()
     return float(k), M
 
-grad_generator_fn = value_and_grad(generator_forward,
-                                   optimizer_G.parameters,
-                                   has_aux=True)
-grad_discriminator_fn = value_and_grad(discriminator_forward,
-                                       optimizer_D.parameters,
+grad_generator_fn = ops.value_and_grad(generator_forward, None,
+                                       optimizer_G.parameters,
                                        has_aux=True)
+grad_discriminator_fn = ops.value_and_grad(discriminator_forward, None,
+                                           optimizer_D.parameters,
+                                           has_aux=True)
 
 @ms_function
 def train_step(imgs, k):
-    (g_loss, (gen_imgs,)), g_grads = grad_generator_fn(imgs)
+    (g_loss, gen_imgs), g_grads = grad_generator_fn(imgs)
     optimizer_G(g_grads)
-    (d_loss, (d_loss_real, d_loss_fake)), d_grads = grad_discriminator_fn(imgs, gen_imgs, k)
+    (d_loss, d_loss_real, d_loss_fake), d_grads = grad_discriminator_fn(imgs, gen_imgs, k)
     optimizer_D(d_grads)
 
     return g_loss, d_loss, gen_imgs, d_loss_real, d_loss_fake

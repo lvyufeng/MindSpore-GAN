@@ -11,7 +11,6 @@ from mindspore import ms_function
 from mindspore.common.initializer import initializer, Normal
 
 sys.path.append(os.pardir)
-from grad import value_and_grad
 from layers import Dense, Upsample, Embedding, Conv2d, Dropout2d
 from img_utils import to_image
 from dataset import create_dataset
@@ -180,21 +179,21 @@ def accuracy(real_aux, fake_aux, labels, gen_labels):
     d_acc = np.mean(np.argmax(pred, axis=1) == gt)
     return d_acc
 
-grad_generator_fn = value_and_grad(generator_forward,
-                                   optimizer_G.parameters,
-                                   has_aux=True)
-grad_discriminator_fn = value_and_grad(discriminator_forward,
-                                       optimizer_D.parameters,
+grad_generator_fn = ops.value_and_grad(generator_forward, None,
+                                       optimizer_G.parameters,
                                        has_aux=True)
+grad_discriminator_fn = ops.value_and_grad(discriminator_forward, None,
+                                           optimizer_D.parameters,
+                                           has_aux=True)
 
 @ms_function
 def train_step(imgs, labels):
     valid = ops.ones((imgs.shape[0], 1), mindspore.float32)
     fake = ops.zeros((imgs.shape[0], 1), mindspore.float32)
 
-    (g_loss, (gen_imgs, gen_labels)), g_grads = grad_generator_fn(imgs, valid)
+    (g_loss, gen_imgs, gen_labels), g_grads = grad_generator_fn(imgs, valid)
     optimizer_G(g_grads)
-    (d_loss, (real_aux, fake_aux)), d_grads = grad_discriminator_fn(imgs, labels, gen_imgs, gen_labels, valid, fake)
+    (d_loss, real_aux, fake_aux), d_grads = grad_discriminator_fn(imgs, labels, gen_imgs, gen_labels, valid, fake)
     optimizer_D(d_grads)
 
     return g_loss, d_loss, gen_labels, real_aux, fake_aux

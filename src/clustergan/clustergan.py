@@ -11,7 +11,6 @@ from mindspore.common.initializer import initializer, Normal
 from tqdm import tqdm
 
 sys.path.append(os.pardir)
-from grad import value_and_grad, grad
 from img_utils import to_image
 from dataset import create_dataset
 
@@ -64,7 +63,7 @@ def calc_gradient_penalty(real_data, generated_data):
     interpolated = alpha * real_data + (1 - alpha) * generated_data
 
     # Calculate gradients of probabilities with respect to examples
-    grad_fn = grad(discriminator)
+    grad_fn = ops.grad(discriminator)
     (gradients,) = grad_fn(interpolated)
     
     # Gradients have shape (batch_size, num_channels, img_width, img_height),
@@ -359,10 +358,10 @@ def discriminator_forward(real_imgs, zn, zc):
     return d_loss
 
 
-grad_generator_fn = value_and_grad(generator_forward,
-                                   optimizer_GE.parameters)
-grad_discriminator_fn = value_and_grad(discriminator_forward,
-                                       optimizer_D.parameters)
+grad_generator_fn = ops.value_and_grad(generator_forward, None,
+                                       optimizer_GE.parameters)
+grad_discriminator_fn = ops.value_and_grad(discriminator_forward, None,
+                                           optimizer_D.parameters)
 
 @ms_function
 def train_step_d(real_imgs, zn, zc):

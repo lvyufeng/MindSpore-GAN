@@ -2,7 +2,6 @@ import os
 import sys
 import argparse
 import numpy as np
-import mindspore
 import mindspore.nn as nn
 import mindspore.ops as ops
 import mindspore.numpy as mnp
@@ -10,7 +9,6 @@ from mindspore import ms_function
 from tqdm import tqdm
 
 sys.path.append(os.pardir)
-from grad import value_and_grad, grad
 from layers import Dense
 from img_utils import to_image
 from dataset import create_dataset
@@ -103,7 +101,7 @@ def compute_gradient_penalty(real_samples, fake_samples):
     # Get random interpolation between real and fake samples
     interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples))
     
-    grad_fn = grad(discriminator)
+    grad_fn = ops.grad(discriminator)
     # Get gradient w.r.t. interpolates
     (gradients,) = grad_fn(interpolates)
 
@@ -139,22 +137,22 @@ def generator_forward(z):
 
     return g_loss, fake_imgs
 
-grad_generator_fn = value_and_grad(generator_forward,
-                                   optimizer_G.parameters,
-                                   has_aux=True)
-grad_discriminator_fn = value_and_grad(discriminator_forward,
-                                       optimizer_D.parameters,
+grad_generator_fn = ops.value_and_grad(generator_forward, None,
+                                       optimizer_G.parameters,
                                        has_aux=True)
+grad_discriminator_fn = ops.value_and_grad(discriminator_forward, None,
+                                           optimizer_D.parameters,
+                                           has_aux=True)
 
 @ms_function
 def train_step_d(imgs):
-    (d_loss, (z,)), d_grads = grad_discriminator_fn(imgs)
+    (d_loss, z), d_grads = grad_discriminator_fn(imgs)
     optimizer_D(d_grads)
     return d_loss, z
 
 @ms_function
 def train_step_g(z):
-    (g_loss, (fake_imgs,)), g_grads = grad_generator_fn(z)
+    (g_loss, fake_imgs), g_grads = grad_generator_fn(z)
     optimizer_G(g_grads)
 
     return g_loss, fake_imgs

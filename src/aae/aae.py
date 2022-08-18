@@ -10,7 +10,6 @@ from mindspore import ms_function
 from tqdm import tqdm
 
 sys.path.append(os.pardir)
-from grad import value_and_grad
 from layers import Dense
 from img_utils import to_image
 from dataset import create_dataset
@@ -146,10 +145,10 @@ def discriminator_forward(encoded_imgs, valid, fake):
     d_loss = 0.5 * (real_loss + fake_loss)
     return d_loss
 
-grad_generator_fn = value_and_grad(generator_forward,
+grad_generator_fn = ops.value_and_grad(generator_forward, None,
                                    optimizer_G.parameters,
                                    has_aux=True)
-grad_discriminator_fn = value_and_grad(discriminator_forward,
+grad_discriminator_fn = ops.value_and_grad(discriminator_forward, None,
                                        optimizer_D.parameters)
 
 @ms_function
@@ -157,7 +156,7 @@ def train_step(imgs):
     valid = ops.ones((imgs.shape[0], 1), mindspore.float32)
     fake = ops.zeros((imgs.shape[0], 1), mindspore.float32)
 
-    (g_loss, (encoded_imgs,)), g_grads = grad_generator_fn(imgs, valid)
+    (g_loss, encoded_imgs), g_grads = grad_generator_fn(imgs, valid)
     optimizer_G(g_grads)
     d_loss, d_grads = grad_discriminator_fn(encoded_imgs, valid, fake)
     optimizer_D(d_grads)
